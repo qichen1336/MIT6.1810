@@ -503,3 +503,91 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void){
+  uint64 addr, len, offset;
+  int prot_set,map_set,fd;
+  struct file * f;
+  argaddr(0,&addr);
+  argaddr(1,&len);
+  argint(2,&prot_set);
+  argint(3,&map_set);
+  argfd(4, &fd, &f);
+  argaddr(5, &offset);
+
+  if ( ((!f->readable) && (prot_set & PROT_READ)) || ((!f->writable) && ( map_set & MAP_SHARED) && (prot_set & PROT_WRITE))) return -1;
+  struct proc * p = myproc();
+  int i;
+  uint64 last_used = MAXVA - 2*PGSIZE;
+  for( i=0;i<NVMA;i++){
+     if(p->vma[i].addr == 0) break;
+     else last_used = PGROUNDDOWN(p->vma[i].addr);
+  }
+  if (i == NVMA)  return 0xffffffffffffffff;
+  p->vma[i].addr = PGROUNDDOWN(last_used - len);
+  p->vma[i].f = f;
+  filedup(f);
+  p->vma[i].len = len;
+  p->vma[i].prot_set = prot_set;
+  p->vma[i].map_set =  map_set;
+  p->vma[i].offset = offset;
+  return p->vma[i].addr;
+}
+
+uint64
+sys_munmap(void){
+  uint64 addr,len;
+  argaddr(0,&addr);
+  argaddr(1,&len);
+    if (len == 0) {
+    return -1;
+  }
+  struct VMA * vma = 0;
+  struct proc * p = myproc();
+  for (int i = 0; i < NVMA; i++)
+  {
+    if(addr>=p->vma[i].addr && addr< p->vma[i].addr+p->vma[i].len)
+    { vma=&p->vma[i]; break;}
+  }
+  if(vma==0) return -1;
+  if(vma->addr == addr && addr + len<=vma->addr+vma->len){
+     vma->len -= PGROUNDUP(len);
+     vma->addr += PGROUNDUP(len);
+     vma->offset += PGROUNDUP(len);
+     for(;addr<vma->addr;addr+=PGSIZE){
+      if(vma->map_set& MAP_SHARED && walkaddr(p->pagetable,addr)!=0){
+        begin_op();
+        ilock(vma->f->ip);
+        writei(vma->f->ip, 1, addr, vma->offset + addr - vma->addr, PGSIZE);
+        iunlock(vma->f->ip);
+        end_op();
+        //  filewrite(vma->f, addr, PGSIZE); // 为什么这样是对的，这不是胡扯么？
+        // 他这么干肯定有问题,而且他回收的时候也忘记了 fileclose ，你的更好
+        // 直接修改 uvmunmap 也肯定不如 使用 walkaddr来的好！
+      }
+      if(walkaddr(p->pagetable,addr)!=0) uvmunmap(p->pagetable  ,addr,1 ,1);
+     }
+  }
+  else if(vma->addr + vma->len == addr+len){
+    vma->len-=PGROUNDUP(len);
+    addr = PGROUNDDOWN(addr);
+    for(;addr<vma->addr;addr+=PGSIZE){
+      if(vma->map_set& MAP_SHARED && walkaddr(p->pagetable,addr)!=0){
+        begin_op();
+        ilock(vma->f->ip);
+        writei(vma->f->ip, 1, addr, vma->offset + addr - vma->addr, PGSIZE);
+        iunlock(vma->f->ip);
+        end_op();
+      }
+      if(walkaddr(p->pagetable,addr)!=0) uvmunmap(p->pagetable , addr,1 ,1);
+    }
+  } else return -1;
+
+  if (vma->len<=0) {
+    vma->addr = 0;
+    fileclose(vma->f);
+  }
+  return 0;
+  
+}

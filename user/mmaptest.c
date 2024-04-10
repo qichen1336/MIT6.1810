@@ -55,7 +55,7 @@ _v1(char *p)
 //
 // create a file to be mapped, containing
 // 1.5 pages of 'A' and half a page of zeros.
-//
+////你这里就挺扯淡的,你这个文件哪有半页0 我怎么没看见？？？？ 你是默认分配的内存就是0是么，太扯淡了吧
 void
 makefile(const char *f)
 {

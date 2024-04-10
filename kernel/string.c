@@ -38,6 +38,7 @@ memmove(void *dst, const void *src, uint n)
   
   s = src;
   d = dst;
+ 
   if(s < d && s + n > d){
     s += n;
     d += n;
@@ -45,7 +46,7 @@ memmove(void *dst, const void *src, uint n)
       *--d = *--s;
   } else
     while(n-- > 0)
-      *d++ = *s++;
+      {*d++ = *s++;}
 
   return dst;
 }

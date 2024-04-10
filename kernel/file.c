@@ -180,3 +180,37 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+int 
+mmap_solver(uint64 addr){
+
+  struct VMA * vma = 0;
+  struct proc *p = myproc();
+  for(int i =0;i<NVMA; i++){
+    if (p->vma[i].addr==0) continue;
+    if (addr >= p->vma[i].addr && addr < p->vma[i].addr + p->vma[i].len){
+      vma = &p->vma[i];
+      break;
+    }
+  }
+  if (vma==0) return -1;
+  addr = PGROUNDDOWN(addr);// 不会溢出，映射开头一定是页表头
+  if ( walkaddr(p->pagetable,addr)!=0) return -1;
+  uint64 pa = (uint64)kalloc();
+  memset((char*)pa,0,PGSIZE);
+  // printf("before:\n");
+  // for(int i =0;i<PGSIZE/8;i++){
+  //   printf("%p\n",*((uint64*)(pa)+i));
+  // }
+  begin_op();
+  ilock(vma->f->ip);
+  readi(vma->f->ip, 0, pa, vma->offset + addr - vma->addr, PGSIZE);
+  iunlock(vma->f->ip);
+  end_op();
+  // printf("map %p, mode is %p, offset is %p\n, we have read %d",addr,vma->prot_set<<1,vma->offset + addr - vma->addr,record);
+  mappages(p->pagetable, addr, PGSIZE, pa, vma->prot_set<<1 | PTE_U);
+  // printf("After:\n");
+  // for(int i =0;i<PGSIZE/8;i++){
+  //   printf("%p\n",*((uint64*)(pa)+i));
+  // }
+  return 0;
+}
